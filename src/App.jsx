@@ -364,7 +364,7 @@ function Kpi({ label, value, icon: Icon, tone }) {
   return (
     <div className="rounded-xl p-4" style={{ backgroundColor: t.bg, border: tone === "gray" ? `1px solid ${C.line}` : "none" }}>
       <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold" style={{ color: t.sub }}>{label}</span><Icon size={15} color={t.sub} /></div>
-      <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold" style={{ color: t.sub }}>{label}</span><Icon size={15} color={t.sub} /></div>
+      
       <div className="text-xl font-bold" style={{ color: t.fg, fontFamily: "'Space Grotesk', sans-serif" }}>{value}</div>
     </div>
   );
