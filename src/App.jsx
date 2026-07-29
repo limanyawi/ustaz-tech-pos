@@ -5,7 +5,11 @@ import {
   BarChart3, AlertTriangle, Plus, Search, Trash2, X, TrendingUp,
   TrendingDown, Wallet, Landmark, CircleDollarSign, Edit2, Check, LogOut, Users
 } from "lucide-react";
-
+import {
+  LayoutDashboard, Package, ShoppingCart, Truck, Receipt, Wrench,
+  BarChart3, AlertTriangle, Plus, Search, Trash2, X, TrendingUp,
+  TrendingDown, Wallet, Landmark, CircleDollarSign, Edit2, Check, LogOut, Users, UserCircle
+} from "lucide-react";
 const C = {
   navy: "#12213F", navyLight: "#1D3766", navySoft: "#EBF0FA",
   gold: "#C9A227", ink: "#1A1F2B", paper: "#F6F7FA", card: "#FFFFFF",
@@ -22,7 +26,7 @@ const NAV = [
   { key: "repairs", label: "Repairs", icon: Wrench, roles: ["owner", "manager", "staff", "technician"] },
   { key: "dailyReport", label: "Daily Staff Report", icon: Users, roles: ["owner", "manager"] },
   { key: "reports", label: "Reports", icon: BarChart3, roles: ["owner", "manager"] },
-];
+];{ key: "customers", label: "Customers", icon: UserCircle, roles: ["owner", "manager", "staff", "technician"] },
 const naira = (n) => "\u20A6" + Math.round(Number(n) || 0).toLocaleString("en-NG");
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = (prefix) => prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
@@ -156,7 +160,165 @@ export default function App() {
     </div>
   );
 }
+/* ---------------------------------------------------------
+   CUSTOMERS
+--------------------------------------------------------- */
+const emptyCustomer = { name: "", phone: "", address: "", notes: "" };
 
+function Customers({ isAdmin, refresh, refreshKey }) {
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("customers_view").select("*").order("name");
+    setCustomers(data || []);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  const filtered = customers.filter((c) => {
+    const q = query.toLowerCase();
+    return [c.name, c.phone].some((v) => (v || "").toLowerCase().includes(q));
+  });
+
+  const saveCustomer = async (form) => {
+    setError("");
+    if (editing && editing.id) {
+      const { error } = await supabase.from("customers").update(form).eq("id", editing.id);
+      if (error) { setError(error.message); return; }
+    } else {
+      const { error } = await supabase.from("customers").insert([{ ...form, id: uid("C") }]);
+      if (error) { setError(error.message); return; }
+    }
+    setShowForm(false); setEditing(null);
+    load(); refresh();
+  };
+
+  const deleteCustomer = async (id) => {
+    const { error } = await supabase.from("customers").delete().eq("id", id);
+    if (!error) { load(); refresh(); if (selected && selected.id === id) setSelected(null); }
+  };
+
+  if (loading) return <CenteredMessage text="Loading customers…" />;
+
+  if (selected) {
+    return <CustomerDetail customer={selected} onBack={() => setSelected(null)} onEdit={() => { setEditing(selected); setShowForm(true); }} />;
+  }
+
+  return (
+    <div>
+      <Header title="Customers" subtitle="Every customer who's bought from you or brought in a repair." action={<Btn onClick={() => { setEditing(null); setShowForm(true); }}><Plus size={16} /> Add Customer</Btn>} />
+      <Card style={{ padding: 0 }}>
+        <div className="p-4"><input className={inputCls} style={inputStyle} placeholder="Search by name or phone…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+        <table className="w-full text-sm">
+          <thead><tr style={{ backgroundColor: C.navySoft }}>{["Name", "Phone", "Balance Owed", ""].map((h) => <th key={h} className="text-left px-4 py-2.5 font-semibold text-xs" style={{ color: C.navy }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {filtered.map((c) => (
+              <tr key={c.id} style={{ borderTop: `1px solid ${C.line}`, cursor: "pointer" }} onClick={() => setSelected(c)}>
+                <td className="px-4 py-2.5 font-medium">{c.name}</td>
+                <td className="px-4 py-2.5">{c.phone || "—"}</td>
+                <td className="px-4 py-2.5">{c.balance_owed > 0 ? <Badge tone="amber">{naira(c.balance_owed)}</Badge> : <Badge tone="green">Clear</Badge>}</td>
+                <td className="px-4 py-2.5">{isAdmin && <button onClick={(e) => { e.stopPropagation(); deleteCustomer(c.id); }}><Trash2 size={14} color={C.red} /></button>}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && <tr><td colSpan={4}><EmptyNote text="No customers yet." /></td></tr>}
+          </tbody>
+        </table>
+      </Card>
+      {showForm && <CustomerForm initial={editing || emptyCustomer} error={error} onCancel={() => { setShowForm(false); setEditing(null); setError(""); }} onSave={saveCustomer} />}
+    </div>
+  );
+}
+
+function CustomerForm({ initial, onCancel, onSave, error }) {
+  const [form, setForm] = useState(initial);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  return (
+    <Modal title={initial.id ? "Edit Customer" : "Add Customer"} onClose={onCancel}>
+      <Field label="Name"><input className={inputCls} style={inputStyle} value={form.name} onChange={set("name")} /></Field>
+      <Field label="Phone"><input className={inputCls} style={inputStyle} value={form.phone} onChange={set("phone")} /></Field>
+      <Field label="Address"><input className={inputCls} style={inputStyle} value={form.address} onChange={set("address")} /></Field>
+      <Field label="Notes"><input className={inputCls} style={inputStyle} value={form.notes} onChange={set("notes")} /></Field>
+      {error && <p className="text-xs mb-2" style={{ color: C.red }}>{error}</p>}
+      <div className="flex justify-end gap-2 mt-2"><Btn variant="ghost" onClick={onCancel}>Cancel</Btn><Btn onClick={() => onSave(form)}><Check size={16} /> Save</Btn></div>
+    </Modal>
+  );
+}
+
+function CustomerDetail({ customer, onBack, onEdit }) {
+  const [sales, setSales] = useState([]);
+  const [repairs, setRepairs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const [s, r] = await Promise.all([
+        supabase.from("sales_view").select("*").eq("customer_id", customer.id).order("date", { ascending: false }),
+        supabase.from("repairs").select("*").eq("customer_id", customer.id).order("date", { ascending: false }),
+      ]);
+      setSales(s.data || []);
+      setRepairs(r.data || []);
+      setLoading(false);
+    })();
+  }, [customer.id]);
+
+  if (loading) return <CenteredMessage text="Loading customer…" />;
+
+  return (
+    <div>
+      <Header title={customer.name} subtitle={customer.phone || "No phone on file"} action={<div className="flex gap-2"><Btn variant="ghost" onClick={onBack}>Back</Btn><Btn onClick={onEdit}><Edit2 size={16} /> Edit</Btn></div>} />
+      <div className="grid md:grid-cols-3 gap-4 mb-6">
+        <Kpi label="Balance Owed" value={naira(customer.balance_owed)} icon={Wallet} tone={customer.balance_owed > 0 ? "amber" : "green"} />
+        <Kpi label="Total Purchases" value={naira(sales.reduce((a, s) => a + s.total, 0))} icon={CircleDollarSign} tone="navy" />
+        <Kpi label="Repair Jobs" value={repairs.length} icon={Wrench} tone="gray" />
+      </div>
+      {customer.address && <p className="text-sm mb-1" style={{ color: C.gray }}>{customer.address}</p>}
+      {customer.notes && <p className="text-sm mb-4" style={{ color: C.gray }}>{customer.notes}</p>}
+
+      <h3 className="font-semibold text-sm mb-3 mt-6">Purchase History</h3>
+      <Card style={{ padding: 0 }}>
+        <table className="w-full text-sm">
+          <thead><tr style={{ backgroundColor: C.navySoft }}>{["Date", "Payment", "Total"].map((h) => <th key={h} className="text-left px-4 py-2.5 font-semibold text-xs" style={{ color: C.navy }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {sales.map((s) => (
+              <tr key={s.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td className="px-4 py-2.5">{s.date}</td>
+                <td className="px-4 py-2.5"><Badge tone={s.payment === "Cash" ? "green" : "gray"}>{s.payment}</Badge></td>
+                <td className="px-4 py-2.5 font-semibold">{naira(s.total)}</td>
+              </tr>
+            ))}
+            {sales.length === 0 && <tr><td colSpan={3}><EmptyNote text="No purchases linked yet." /></td></tr>}
+          </tbody>
+        </table>
+      </Card>
+
+      <h3 className="font-semibold text-sm mb-3 mt-6">Repair History</h3>
+      <Card style={{ padding: 0 }}>
+        <table className="w-full text-sm">
+          <thead><tr style={{ backgroundColor: C.navySoft }}>{["Date", "Phone Model", "Status", "Balance"].map((h) => <th key={h} className="text-left px-4 py-2.5 font-semibold text-xs" style={{ color: C.navy }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {repairs.map((r) => (
+              <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td className="px-4 py-2.5">{r.date}</td>
+                <td className="px-4 py-2.5">{r.phone_model}</td>
+                <td className="px-4 py-2.5">{r.status}</td>
+                <td className="px-4 py-2.5 font-semibold">{(r.amount_charged - r.amount_paid) > 0 ? <Badge tone="amber">{naira(r.amount_charged - r.amount_paid)}</Badge> : <Badge tone="green">Paid</Badge>}</td>
+              </tr>
+            ))}
+            {repairs.length === 0 && <tr><td colSpan={4}><EmptyNote text="No repair jobs linked yet." /></td></tr>}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+          }
 function CenteredMessage({ text }) {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: C.paper }}>
