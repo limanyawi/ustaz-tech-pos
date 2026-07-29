@@ -370,6 +370,136 @@ function Kpi({ label, value, icon: Icon, tone }) {
   );
 }
 /* ---------------------------------------------------------
+   PRODUCTS
+--------------------------------------------------------- */
+const emptyProduct = { category: "", brand: "", model: "", quality: "", manufacturer: "", buy_price: "", sell_price: "", wholesale_price: "", stock: "", min_stock: "", supplier: "" };
+
+function Products({ isAdmin, refresh, refreshKey }) {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("products_view").select("*").order("brand");
+    setProducts(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  const filtered = products.filter((p) => {
+    const q = query.toLowerCase();
+    return [p.brand, p.model, p.category, p.manufacturer, p.id].some((v) => (v || "").toLowerCase().includes(q));
+  });
+
+  const saveProduct = async (form) => {
+    setError("");
+    if (editing && editing.id) {
+      const { error } = await supabase.from("products").update(form).eq("id", editing.id);
+      if (error) { setError(error.message); return; }
+    } else {
+      const { error } = await supabase.from("products").insert([{ ...form, id: uid("P") }]);
+      if (error) { setError(error.message); return; }
+    }
+    setShowForm(false); setEditing(null);
+    load(); refresh();
+  };
+
+  const deleteProduct = async (id) => {
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (!error) { load(); refresh(); }
+  };
+
+  const columns = isAdmin
+    ? ["ID", "Category", "Brand/Model", "Quality", "Manufacturer", "Buy", "Sell", "Stock", "Status", ""]
+    : ["Category", "Brand/Model", "Quality", "Manufacturer", "Sell", "Stock", "Status"];
+
+  if (loading) return <CenteredMessage text="Loading products…" />;
+
+  return (
+    <div>
+      <Header title="Products & Inventory" subtitle={isAdmin ? "Every part you stock — one row per model, quality tier & manufacturer." : "Search stock and check availability."}
+        action={isAdmin && <Btn onClick={() => { setEditing(null); setShowForm(true); }}><Plus size={16} /> Add Product</Btn>} />
+      <div className="mb-4 flex items-center gap-2 max-w-sm">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" color={C.gray} />
+          <input className={inputCls} style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search model, brand, manufacturer…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+      </div>
+      <Card style={{ padding: 0 }}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr style={{ backgroundColor: C.navySoft }}>{columns.map((h) => <th key={h} className="text-left px-4 py-2.5 font-semibold text-xs" style={{ color: C.navy }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {filtered.map((p) => {
+                const low = p.stock <= p.min_stock;
+                return (
+                  <tr key={p.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                    {isAdmin && <td className="px-4 py-2.5 text-xs" style={{ color: C.gray }}>{p.id}</td>}
+                    <td className="px-4 py-2.5">{p.category}</td>
+                    <td className="px-4 py-2.5 font-medium">{p.brand} {p.model}</td>
+                    <td className="px-4 py-2.5">{p.quality}</td>
+                    <td className="px-4 py-2.5">{p.manufacturer}</td>
+                    {isAdmin && <td className="px-4 py-2.5">{naira(p.buy_price)}</td>}
+                    <td className="px-4 py-2.5">{naira(p.sell_price)}</td>
+                    <td className="px-4 py-2.5 font-semibold">{p.stock}</td>
+                    <td className="px-4 py-2.5"><Badge tone={low ? "red" : "green"}>{low ? "LOW STOCK" : "OK"}</Badge></td>
+                    {isAdmin && (
+                      <td className="px-4 py-2.5">
+                        <div className="flex gap-1">
+                          <button onClick={() => { setEditing(p); setShowForm(true); }} className="p-1.5 rounded hover:bg-gray-100"><Edit2 size={14} color={C.gray} /></button>
+                          <button onClick={() => deleteProduct(p.id)} className="p-1.5 rounded hover:bg-gray-100"><Trash2 size={14} color={C.red} /></button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && <tr><td colSpan={columns.length}><EmptyNote text="No products match your search." /></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      {showForm && <ProductForm initial={editing || emptyProduct} error={error} onCancel={() => { setShowForm(false); setEditing(null); setError(""); }} onSave={saveProduct} />}
+    </div>
+  );
+}
+
+function ProductForm({ initial, onCancel, onSave, error }) {
+  const [form, setForm] = useState(initial);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  return (
+    <Modal title={initial.id ? "Edit Product" : "Add Product"} onClose={onCancel}>
+      <div className="grid grid-cols-2 gap-x-4">
+        <Field label="Category"><input className={inputCls} style={inputStyle} value={form.category} onChange={set("category")} placeholder="Screens, Batteries…" /></Field>
+        <Field label="Brand"><input className={inputCls} style={inputStyle} value={form.brand} onChange={set("brand")} placeholder="Samsung, iPhone…" /></Field>
+        <Field label="Model"><input className={inputCls} style={inputStyle} value={form.model} onChange={set("model")} placeholder="A32, 11, Spark 8…" /></Field>
+        <Field label="Quality"><input className={inputCls} style={inputStyle} value={form.quality} onChange={set("quality")} placeholder="Original, Incell, OLED, Copy…" /></Field>
+        <Field label="Manufacturer"><input className={inputCls} style={inputStyle} value={form.manufacturer} onChange={set("manufacturer")} placeholder="MX, CAA, BREDA, FLYEAH…" /></Field>
+        <Field label="Supplier"><input className={inputCls} style={inputStyle} value={form.supplier} onChange={set("supplier")} /></Field>
+        <Field label="Buy Price (₦)"><input type="number" className={inputCls} style={inputStyle} value={form.buy_price} onChange={set("buy_price")} /></Field>
+        <Field label="Selling Price (₦)"><input type="number" className={inputCls} style={inputStyle} value={form.sell_price} onChange={set("sell_price")} /></Field>
+        <Field label="Wholesale Price (₦)"><input type="number" className={inputCls} style={inputStyle} value={form.wholesale_price} onChange={set("wholesale_price")} /></Field>
+        <Field label="Current Stock"><input type="number" className={inputCls} style={inputStyle} value={form.stock} onChange={set("stock")} /></Field>
+        <Field label="Min Stock Level"><input type="number" className={inputCls} style={inputStyle} value={form.min_stock} onChange={set("min_stock")} /></Field>
+      </div>
+      {error && <p className="text-xs mb-2" style={{ color: C.red }}>{error}</p>}
+      <div className="flex justify-end gap-2 mt-2">
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+        <Btn onClick={() => onSave({
+          ...form,
+          buy_price: Number(form.buy_price) || 0, sell_price: Number(form.sell_price) || 0,
+          wholesale_price: Number(form.wholesale_price) || 0, stock: Number(form.stock) || 0, min_stock: Number(form.min_stock) || 0,
+        })}><Check size={16} /> Save Product</Btn>
+      </div>
+    </Modal>
+  );
+    }
+/* ---------------------------------------------------------
    SALES / POS
 --------------------------------------------------------- */
 function SalesPOS({ profile, refresh, refreshKey }) {
