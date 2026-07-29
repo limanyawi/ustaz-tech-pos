@@ -213,7 +213,7 @@ function LoginScreen() {
 function Sidebar({ tab, setTab, nav, profile, onLogout }) {
   const roleLabel = { owner: "Owner", manager: "Manager", staff: "Sales Staff", technician: "Technician" }[profile.role];
   return (
-    <aside className="w-60 shrink-0 hidden sm:flex flex-col justify-between p-5" style={{ backgroundColor: C.navy }}>
+    <aside className="w-48 sm:w-60 shrink-0 flex flex-col justify-between p-5" style={{ backgroundColor: C.navy }}>
       <div>
         <div className="mb-8 px-1">
           <div className="text-lg font-bold tracking-tight leading-tight" style={{ color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Ustaz Tech</div>
