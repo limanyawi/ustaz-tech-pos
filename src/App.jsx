@@ -1038,17 +1038,180 @@ function Repairs({ isAdmin, profile, refresh, refreshKey }) {
           <Field label="Phone Model"><input className={inputCls} style={inputStyle} value={form.phoneModel} onChange={(e) => setForm({ ...form, phoneModel: e.target.value })} /></Field>
           <Field label="Fault"><input className={inputCls} style={inputStyle} value={form.fault} onChange={(e) => setForm({ ...form, fault: e.target.value })} /></Field>
           <Field label="Parts Used"><input className={inputCls} style={inputStyle} value={form.partsUsed} onChange={(e) => setForm({ ...form, partsUsed: e.target.value })} placeholder="e.g. Screen (FLYEAH)" /></Field>
-          <div className="grid grid-cols-3 gap-x-3">
+/* ---------------------------------------------------------
+   REPAIRS  (job cards — all roles can view/create/update)
+--------------------------------------------------------- */
+const REPAIR_STATUSES = ["Pending", "In Progress", "Completed", "Delivered"];
+
+function warrantyExpiry(dateStr, days) {
+  if (!dateStr || !days) return null;
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + Number(days));
+  return d.toISOString().slice(0, 10);
+}
+
+function buildJobCardText(r) {
+  const balance = Number(r.amount_charged) - Number(r.amount_paid);
+  return [
+    `*USTAZ TECH SOLUTIONS — Repair Job Card*`,
+    `Job #: ${r.id}`,
+    `Date: ${r.date}`,
+    `Customer: ${r.customer}${r.phone ? " (" + r.phone + ")" : ""}`,
+    `Device: ${r.phone_model}`,
+    `Fault: ${r.fault}`,
+    r.accessories_received ? `Accessories received: ${r.accessories_received}` : null,
+    `Technician: ${r.technician || "—"}`,
+    `Status: ${r.status}`,
+    r.expected_completion ? `Expected completion: ${r.expected_completion}` : null,
+    `Amount Charged: ${naira(r.amount_charged)}`,
+    `Amount Paid: ${naira(r.amount_paid)}`,
+    balance > 0 ? `Balance Due: ${naira(balance)}` : `Balance: Paid in full`,
+    r.warranty_days ? `Warranty: ${r.warranty_days} days (until ${warrantyExpiry(r.date, r.warranty_days)})` : null,
+  ].filter(Boolean).join("\n");
+}
+
+function Repairs({ isAdmin, profile, refresh, refreshKey }) {
+  const [repairs, setRepairs] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const empty = {
+    date: todayISO(), customer: "", phone: "", phoneModel: "", fault: "", partsUsed: "", partsCost: "",
+    technician: profile.role === "technician" ? profile.full_name : "", status: "Pending",
+    amountCharged: "", amountPaid: "",
+    imeiSerial: "", accessoriesReceived: "", intakeCondition: "",
+    customerAuthorized: false, expectedCompletion: "", diagnosticFee: "", warrantyDays: "",
+  };
+  const [form, setForm] = useState(empty);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("repairs_view").select("*").order("date", { ascending: false });
+    setRepairs(data || []);
+  }, []);
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  const repeatKeys = useMemo(() => {
+    const counts = {};
+    repairs.forEach((r) => {
+      const key = (r.phone && r.phone.trim()) || `${r.customer}|${r.phone_model}`;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [repairs]);
+
+  const submit = async () => {
+    if (!form.customer || !form.phoneModel) return;
+    await supabase.from("repairs").insert([{
+      id: uid("J"), date: form.date, customer: form.customer, phone: form.phone, phone_model: form.phoneModel,
+      fault: form.fault, parts_used: form.partsUsed, parts_cost: Number(form.partsCost) || 0,
+      technician: form.technician, status: form.status,
+      amount_charged: Number(form.amountCharged) || 0, amount_paid: Number(form.amountPaid) || 0,
+      imei_serial: form.imeiSerial, accessories_received: form.accessoriesReceived, intake_condition: form.intakeCondition,
+      customer_authorized: form.customerAuthorized, authorization_date: form.customerAuthorized ? todayISO() : null,
+      expected_completion: form.expectedCompletion || null, diagnostic_fee: Number(form.diagnosticFee) || 0,
+      warranty_days: Number(form.warrantyDays) || 0,
+    }]);
+    setForm(empty); setShowForm(false);
+    load(); refresh();
+  };
+
+  const setStatus = async (id, status) => { await supabase.from("repairs").update({ status }).eq("id", id); load(); refresh(); };
+  const deleteJob = async (id) => { await supabase.from("repairs").delete().eq("id", id); load(); refresh(); };
+
+  const copyJobCard = (r) => {
+    const text = buildJobCardText(r);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedId(r.id);
+        setTimeout(() => setCopiedId(null), 2000);
+      });
+    }
+  };
+
+  const statusTone = { Pending: "amber", "In Progress": "gray", Completed: "green", Delivered: "green" };
+
+  return (
+    <div>
+      <Header title="Repair Jobs" subtitle="Track every repair job card from intake to delivery." action={<Btn onClick={() => setShowForm(true)}><Plus size={16} /> New Job</Btn>} />
+      <Card style={{ padding: 0 }}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr style={{ backgroundColor: C.navySoft }}>{["Job #", "Date", "Customer", "Phone Model", "Fault", "Technician", "Status", "Charged", "Paid", "Balance", "Warranty", ""].map((h) => <th key={h} className="text-left px-4 py-2.5 font-semibold text-xs" style={{ color: C.navy }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {repairs.map((r) => {
+                const balance = r.amount_charged - r.amount_paid;
+                const key = (r.phone && r.phone.trim()) || `${r.customer}|${r.phone_model}`;
+                const isRepeat = repeatKeys[key] > 1;
+                const expiry = warrantyExpiry(r.date, r.warranty_days);
+                const warrantyActive = expiry && expiry >= todayISO();
+                return (
+                  <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-4 py-2.5 text-xs" style={{ color: C.gray }}>{r.id}</td>
+                    <td className="px-4 py-2.5">{r.date}</td>
+                    <td className="px-4 py-2.5">
+                      {r.customer}
+                      {isRepeat && <span className="ml-1.5"><Badge tone="amber">Repeat</Badge></span>}
+                    </td>
+                    <td className="px-4 py-2.5">{r.phone_model}</td>
+                    <td className="px-4 py-2.5">{r.fault}</td>
+                    <td className="px-4 py-2.5">{r.technician}</td>
+                    <td className="px-4 py-2.5">
+                      <select value={r.status} onChange={(e) => setStatus(r.id, e.target.value)} className="text-xs font-semibold rounded-full px-2 py-1 border-none outline-none"
+                        style={{ backgroundColor: statusTone[r.status] === "green" ? C.greenSoft : statusTone[r.status] === "amber" ? C.amberSoft : "#EEF0F4", color: statusTone[r.status] === "green" ? C.green : statusTone[r.status] === "amber" ? C.amber : C.gray }}>
+                        {REPAIR_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2.5">{naira(r.amount_charged)}</td>
+                    <td className="px-4 py-2.5">{naira(r.amount_paid)}</td>
+                    <td className="px-4 py-2.5 font-semibold">{balance > 0 ? <Badge tone="amber">{naira(balance)}</Badge> : <Badge tone="green">Paid</Badge>}</td>
+                    <td className="px-4 py-2.5">{r.warranty_days ? <Badge tone={warrantyActive ? "green" : "gray"}>{warrantyActive ? `Until ${expiry}` : "Expired"}</Badge> : "—"}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex gap-1">
+                        <button onClick={() => copyJobCard(r)} className="p-1.5 rounded hover:bg-gray-100" title="Copy job card">
+                          {copiedId === r.id ? <Check size={14} color={C.green} /> : <Edit2 size={14} color={C.gray} />}
+                        </button>
+                        {isAdmin && <button onClick={() => deleteJob(r.id)}><Trash2 size={14} color={C.red} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {repairs.length === 0 && <tr><td colSpan={12}><EmptyNote text="No repair jobs logged yet." /></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      {showForm && (
+        <Modal title="New Repair Job" onClose={() => setShowForm(false)}>
+          <div className="grid grid-cols-2 gap-x-4">
+            <Field label="Date"><input type="date" className={inputCls} style={inputStyle} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
+            <Field label="Technician"><input className={inputCls} style={inputStyle} value={form.technician} onChange={(e) => setForm({ ...form, technician: e.target.value })} /></Field>
+            <Field label="Customer Name"><input className={inputCls} style={inputStyle} value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} /></Field>
+            <Field label="Customer Phone"><input className={inputCls} style={inputStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+          </div>
+          <Field label="Phone Model"><input className={inputCls} style={inputStyle} value={form.phoneModel} onChange={(e) => setForm({ ...form, phoneModel: e.target.value })} /></Field>
+          <Field label="IMEI / Serial Number (optional)"><input className={inputCls} style={inputStyle} value={form.imeiSerial} onChange={(e) => setForm({ ...form, imeiSerial: e.target.value })} placeholder="Only Owner/Manager can view this later" /></Field>
+          <Field label="Fault"><input className={inputCls} style={inputStyle} value={form.fault} onChange={(e) => setForm({ ...form, fault: e.target.value })} /></Field>
+          <Field label="Accessories Received"><input className={inputCls} style={inputStyle} value={form.accessoriesReceived} onChange={(e) => setForm({ ...form, accessoriesReceived: e.target.value })} placeholder="e.g. SIM card, charger, case" /></Field>
+          <Field label="Intake Condition (existing damage before repair)"><input className={inputCls} style={inputStyle} value={form.intakeCondition} onChange={(e) => setForm({ ...form, intakeCondition: e.target.value })} placeholder="e.g. Scratched back glass, dented corner" /></Field>
+          <Field label="Parts Used"><input className={inputCls} style={inputStyle} value={form.partsUsed} onChange={(e) => setForm({ ...form, partsUsed: e.target.value })} placeholder="e.g. Screen (FLYEAH)" /></Field>
+          <div className="grid grid-cols-2 gap-x-4">
             <Field label="Parts Cost (₦)"><input type="number" className={inputCls} style={inputStyle} value={form.partsCost} onChange={(e) => setForm({ ...form, partsCost: e.target.value })} /></Field>
+            <Field label="Diagnostic Fee (₦)"><input type="number" className={inputCls} style={inputStyle} value={form.diagnosticFee} onChange={(e) => setForm({ ...form, diagnosticFee: e.target.value })} /></Field>
             <Field label="Amount Charged (₦)"><input type="number" className={inputCls} style={inputStyle} value={form.amountCharged} onChange={(e) => setForm({ ...form, amountCharged: e.target.value })} /></Field>
             <Field label="Amount Paid (₦)"><input type="number" className={inputCls} style={inputStyle} value={form.amountPaid} onChange={(e) => setForm({ ...form, amountPaid: e.target.value })} /></Field>
+            <Field label="Expected Completion"><input type="date" className={inputCls} style={inputStyle} value={form.expectedCompletion} onChange={(e) => setForm({ ...form, expectedCompletion: e.target.value })} /></Field>
+            <Field label="Warranty (days)"><input type="number" className={inputCls} style={inputStyle} value={form.warrantyDays} onChange={(e) => setForm({ ...form, warrantyDays: e.target.value })} placeholder="e.g. 7, 30" /></Field>
           </div>
+          <label className="flex items-center gap-2 mb-3 text-sm">
+            <input type="checkbox" checked={form.customerAuthorized} onChange={(e) => setForm({ ...form, customerAuthorized: e.target.checked })} />
+            Customer authorized this repair
+          </label>
           <div className="flex justify-end gap-2 mt-2"><Btn variant="ghost" onClick={() => setShowForm(false)}>Cancel</Btn><Btn onClick={submit}><Check size={16} /> Save Job</Btn></div>
         </Modal>
       )}
     </div>
   );
-}
+                                                                                                                                                          }
 
 /* ---------------------------------------------------------
    DAILY STAFF SALES REPORT  (Owner/Manager only)
