@@ -5,11 +5,6 @@ import {
   BarChart3, AlertTriangle, Plus, Search, Trash2, X, TrendingUp,
   TrendingDown, Wallet, Landmark, CircleDollarSign, Edit2, Check, LogOut, Users
 } from "lucide-react";
-import {
-  LayoutDashboard, Package, ShoppingCart, Truck, Receipt, Wrench,
-  BarChart3, AlertTriangle, Plus, Search, Trash2, X, TrendingUp,
-  TrendingDown, Wallet, Landmark, CircleDollarSign, Edit2, Check, LogOut, Users, UserCircle
-} from "lucide-react";
 const C = {
   navy: "#12213F", navyLight: "#1D3766", navySoft: "#EBF0FA",
   gold: "#C9A227", ink: "#1A1F2B", paper: "#F6F7FA", card: "#FFFFFF",
@@ -26,8 +21,7 @@ const NAV = [
   { key: "repairs", label: "Repairs", icon: Wrench, roles: ["owner", "manager", "staff", "technician"] },
   { key: "dailyReport", label: "Daily Staff Report", icon: Users, roles: ["owner", "manager"] },
   { key: "reports", label: "Reports", icon: BarChart3, roles: ["owner", "manager"] },
-];{ key: "customers", label: "Customers", icon: UserCircle, roles: ["owner", "manager", "staff", "technician"] },
-const naira = (n) => "\u20A6" + Math.round(Number(n) || 0).toLocaleString("en-NG");
+];
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = (prefix) => prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
 function withinRange(dateStr, from, to) { return dateStr && dateStr >= from && dateStr <= to; }
